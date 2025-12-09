@@ -1,0 +1,7 @@
+streamlit
+yfinance
+pandas
+pandas-ta==1.5.4
+vectorbt
+plotly
+numpy

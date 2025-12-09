@@ -1,7 +1,7 @@
 streamlit
 yfinance
 pandas
-pandas-ta==1.5.4
+pandas-ta==0.4.71b0
 vectorbt
 plotly
 numpy

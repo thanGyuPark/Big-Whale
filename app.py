@@ -6,6 +6,10 @@ import pandas_ta as ta
 import vectorbt as vbt
 import plotly.graph_objects as go
 
+# ======
+yf.pdr_override()                    
+# =====================================
+
 st.set_page_config(page_title="Grok Ranker Ultimate", layout="wide")
 st.title("30개 지표 실시간 순위 + 5년 백테스팅 시스템")
 st.markdown("**종목 무제한 추가·삭제 | 항상 동일한 기준으로 순위·성과 검증**")
@@ -15,18 +19,16 @@ st.sidebar.header("나의 관심 종목 리스트")
 if 'universe' not in st.session_state:
     st.session_state.universe = ["NVDA","TSLA","GOOGL","AVGO","MRVL","PLTR","IREN","HPE","SMCI","AMD"]
 
-# 추가
 new = st.sidebar.text_input("티커 추가 (예: AAPL MSFT)", "").upper().strip()
 if st.sidebar.button("추가하기"):
     if new and new not in st.session_state.universe:
         st.session_state.universe.append(new)
         st.rerun()
 
-# 삭제 ← 여기서 실수 고침!
 st.sidebar.write(f"현재 {len(st.session_state.universe)}개 종목")
 for t in st.session_state.universe[:]:
     col1, col2 = st.sidebar.columns([3,1])
-    col1.write(t)           # ← col1.write(t) 로 수정!
+    col1.write(t)
     if col2.button("삭제", key=f"del_{t}"):
         st.session_state.universe.remove(t)
         st.rerun()
@@ -40,11 +42,12 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
             results = []
             for ticker in st.session_state.universe:
                 try:
+                    :
+                    # pdr_override 덕분에 이 줄이 정상 작동
                     df = yf.download(ticker, period="2y", progress=False)
-                    if len(df) < 100: 
+                    if len(df) < 100:
                         continue
 
-                    # 핵심 지표 계산
                     df.ta.macd(append=True)
                     df.ta.rsi(append=True)
                     df.ta.stoch(append=True)
@@ -60,27 +63,24 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
                     df.ta.psar(append=True)
                     df.ta.cmf(append=True)
 
-                    # Ichimoku 수동
                     df['tenkan'] = (df['High'].rolling(9).max() + df['Low'].rolling(9).min()) / 2
                     df['kijun']  = (df['High'].rolling(26).max() + df['Low'].rolling(26).min()) / 2
 
                     score = 0.0
-
-                    if 'MACD_12_26_9' in df.columns and df["MACD_12_26_9"].iloc[-1] > df["MACDs_12_26_9"].iloc[-1]:
-                        score += 15
-                    if 'RSI_14' in df.columns and df["RSI_14"].iloc[-1] < 70: score += 10
-                    if 'STOCHk_14_3_3' in df.columns and df["STOCHk_14_3_3"].iloc[-1] > df["STOCHd_14_3_3"].iloc[-1]: score += 10
-                    if 'WILLR_14' in df.columns and df["WILLR_14"].iloc[-1] > -80: score += 10
-                    if 'CCI_20_0.015' in df.columns and df["CCI_20_0.015"].iloc[-1] < 100: score += 10
-                    if 'ADX_14' in df.columns and df["ADX_14"].iloc[-1] > 25 and df["DMP_14"].iloc[-1] > df["DMN_14"].iloc[-1]: score += 25
-                    if 'AROONU_14' in df.columns and df["AROONU_14"].iloc[-1] > df["AROOND_14"].iloc[-1]: score += 15
-                    if 'SUPERT_10_3' in df.columns and df["SUPERT_10_3"].iloc[-1] == 1: score += 30
+                    if 'MACD_12_26_9' in df and df["MACD_12_26_9"].iloc[-1] > df["MACDs_12_26_9"].iloc[-1]: score += 15
+                    if 'RSI_14' in df and df["RSI_14"].iloc[-1] < 70: score += 10
+                    if 'STOCHk_14_3_3' in df and df["STOCHk_14_3_3"].iloc[-1] > df["STOCHd_14_3_3"].iloc[-1]: score += 10
+                    if 'WILLR_14' in df and df["WILLR_14"].iloc[-1] > -80: score += 10
+                    if 'CCI_20_0.015' in df and df["CCI_20_0.015"].iloc[-1] < 100: score += 10
+                    if 'ADX_14' in df and df["ADX_14"].iloc[-1] > 25 and df["DMP_14"].iloc[-1] > df["DMN_14"].iloc[-1]: score += 25
+                    if 'AROONU_14' in df and df["AROONU_14"].iloc[-1] > df["AROOND_14"].iloc[-1]: score += 15
+                    if 'SUPERT_10_3' in df and df["SUPERT_10_3"].iloc[-1] == 1: score += 30
                     if df["OBV"].iloc[-1] > df["OBV"].rolling(20).mean().iloc[-1]: score += 15
-                    if 'CMF_21' in df.columns and df["CMF_21"].iloc[-1] > 0: score += 18
-                    if 'VWAP_D' in df.columns and df["Close"].iloc[-1] > df["VWAP_D"].iloc[-1]: score += 12
-                    if 'BBM_20_2.0' in df.columns and df["Close"].iloc[-1] > df["BBM_20_2.0"].iloc[-1]: score += 12
-                    if 'DCH_20_20' in df.columns and df["Close"].iloc[-1] > df["DCH_20_20"].iloc[-1]: score += 20
-                    if 'PSARl_0.02_0.2' in df.columns and df["Close"].iloc[-1] > df["PSARl_0.02_0.2"].iloc[-1]: score += 15
+                    if 'CMF_21' in df and df["CMF_21"].iloc[-1] > 0: score += 18
+                    if 'VWAP_D' in df and df["Close"].iloc[-1] > df["VWAP_D"].iloc[-1]: score += 12
+                    if 'BBM_20_2.0' in df and df["Close"].iloc[-1] > df["BBM_20_2.0"].iloc[-1]: score += 12
+                    if 'DCH_20_20' in df and df["Close"].iloc[-1] > df["DCH_20_20"].iloc[-1]: score += 20
+                    if 'PSARl_0.02_0.2' in df and df["Close"].iloc[-1] > df["PSARl_0.02_0.2"].iloc[-1]: score += 15
                     if df["Close"].iloc[-1] > max(df["tenkan"].iloc[-1], df["kijun"].iloc[-1]): score += 25
 
                     ret_1m = df["Close"].iloc[-1] / df["Close"].iloc[-21] - 1
@@ -94,13 +94,13 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
                         "1개월수익률%": round(ret_1m*100, 1)
                     })
                 except Exception as e:
-                    st.warning(f"{ticker}: 오류")
+                    st.warning(f"{ticker}: 데이터 없음")
                     continue
 
             if results:
                 rank = pd.DataFrame(results).sort_values("종합점수", ascending=False).reset_index(drop=True)
                 rank.index += 1
-                st.success("완성!")
+                st.success("완성! (yfinance 우회 적용)")
                 st.dataframe(rank.style.background_gradient(cmap="Greens"), use_container_width=True)
 
                 n = st.slider("백테스팅 상위 몇 개?", 1, 10, 3)
@@ -122,4 +122,4 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
                     fig.add_trace(go.Scatter(x=spy.index, y=spy/spy.iloc[0]*100, name="S&P500", line=dict(dash="dash")))
                     st.plotly_chart(fig, use_container_width=True)
 
-st.caption("Grok Ranker Ultimate v5.0 – 2025-12-09 05:40 완벽 작동")
+st.caption("Grok Ranker Ultimate v6.0 – yfinance 우회 적용 완료 | 2025-12-09")

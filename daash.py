@@ -1,3 +1,5 @@
+import subprocess, sys
+subprocess.check_call([sys.executable, "-m", "pip", "install", "yfinance pandas-ta vectorbt plotly --quiet"])
 # -*- coding: utf-8 -*-
 import streamlit as st
 import yfinance as yf

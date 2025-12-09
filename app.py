@@ -5,10 +5,29 @@ import pandas as pd
 import pandas_ta as ta
 import vectorbt as vbt
 import plotly.graph_objects as go
+import time
 
 st.set_page_config(page_title="Grok Ranker Ultimate", layout="wide")
-st.title("30개 지표 실시간 순위 + 5년 백테스팅 시스템")
+st.title("30개 지표 실시간(유사) 순위 + 5년 백테스팅 시스템")
 st.markdown("**종목 무제한 추가·삭제 | 항상 동일한 기준으로 순위·성과 검증**")
+st.caption("※ yfinance 기반 현재가는 1분봉 최신값을 활용한 ‘유사 실시간’입니다.")
+
+# ==================== (유사) 실시간 현재가 ====================
+@st.cache_data(ttl=30)  # 30초 TTL
+def get_live_like_price(ticker: str):
+    try:
+        intraday = yf.download(
+            ticker,
+            period="1d",
+            interval="1m",
+            progress=False
+        )
+        if intraday is not None and not intraday.empty:
+            return float(intraday["Close"].iloc[-1])
+    except:
+        pass
+    return None
+
 
 # ==================== 사이드바: 종목 관리 ====================
 st.sidebar.header("나의 관심 종목 리스트")
@@ -34,8 +53,22 @@ for t in st.session_state.universe[:]:
         st.session_state.universe.remove(t)
         st.rerun()
 
+st.sidebar.divider()
+
+# 현재가 새로고침 버튼
+if st.sidebar.button("현재가 캐시 초기화/새로고침"):
+    st.cache_data.clear()
+    st.rerun()
+
+# 자동 갱신(선택)
+auto = st.sidebar.checkbox("현재가 자동 갱신(30초)", value=False)
+if auto:
+    # 앱이 커질 경우 부담될 수 있어 옵션으로 둠
+    time.sleep(30)
+    st.rerun()
+
 # ==================== 실행 버튼 ====================
-if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary"):
+if st.button("실시간(유사) 순위 계산 + 5년 백테스팅 실행", type="primary"):
     if not st.session_state.universe:
         st.error("종목을 하나 이상 추가해주세요")
     else:
@@ -98,10 +131,8 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
                         if df["AROONU_14"].iloc[-1] > df["AROOND_14"].iloc[-1]:
                             score += 15
 
-                    # Supertrend 컬럼은 버전에 따라 값/형태가 달라질 수 있어 존재 체크 강화
-                    # 흔한 패턴: SUPERT_10_3, SUPERTd_10_3 등
+                    # Supertrend (환경별 컬럼 차이 대비)
                     if 'SUPERT_10_3' in df.columns:
-                        # 일부 환경에서는 1/-1 혹은 True/False 형태가 섞일 수 있어 안전 처리
                         try:
                             if float(df["SUPERT_10_3"].iloc[-1]) == 1:
                                 score += 30
@@ -137,21 +168,22 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
                             score += 25
 
                     # ==================== 모멘텀/거래량 ====================
-                    # 1개월 수익률 계산 안정화(데이터 부족 방지)
-                    ret_1m = None
+                    ret_1m = 0.0
                     if len(df) >= 22:
                         ret_1m = df["Close"].iloc[-1] / df["Close"].iloc[-21] - 1
                         if ret_1m > 0.1:
                             score += 15
-                    else:
-                        ret_1m = 0.0
 
                     if df["Volume"].iloc[-1] > df["Volume"].rolling(20).mean().iloc[-1] * 2:
                         score += 10
 
+                    # ==================== (유사) 실시간 현재가 반영 ====================
+                    live_price = get_live_like_price(ticker)
+                    display_price = live_price if live_price is not None else float(df["Close"].iloc[-1])
+
                     results.append({
                         "티커": ticker,
-                        "현재가": round(float(df["Close"].iloc[-1]), 2),
+                        "현재가": round(display_price, 2),
                         "종합점수": round(score, 1),
                         "1개월수익률%": round(float(ret_1m) * 100, 1)
                     })
@@ -172,54 +204,57 @@ if st.button("실시간 순위 계산 + 5년 백테스팅 실행", type="primary
                 n = st.slider("백테스팅 상위 몇 개?", 1, 10, 3)
                 tops = rank["티커"].head(n).tolist()
 
-                price = yf.download(tops, start="2019-01-01", progress=False)
+                price_raw = yf.download(tops, start="2019-01-01", progress=False)
 
                 # yfinance 반환 형태 안정화
-                if isinstance(price.columns, pd.MultiIndex):
-                    price = price["Adj Close"]
+                if price_raw is None or price_raw.empty:
+                    st.warning("백테스팅 가격 데이터를 불러오지 못했습니다.")
                 else:
-                    # 단일 티커일 때
-                    if "Adj Close" in price.columns:
-                        price = price[["Adj Close"]].rename(columns={"Adj Close": tops[0]})
+                    if isinstance(price_raw.columns, pd.MultiIndex):
+                        price = price_raw["Adj Close"]
                     else:
-                        price = pd.DataFrame()
+                        # 단일 티커일 때
+                        if "Adj Close" in price_raw.columns and tops:
+                            price = price_raw[["Adj Close"]].rename(columns={"Adj Close": tops[0]})
+                        else:
+                            price = pd.DataFrame()
 
-                price = price.dropna(how="all")
+                    price = price.dropna(how="all")
 
-                if not price.empty:
-                    pf = vbt.Portfolio.from_holding(price, freq="1M")
-                    stats = pf.stats()
+                    if not price.empty:
+                        pf = vbt.Portfolio.from_holding(price, freq="1M")
+                        stats = pf.stats()
 
-                    st.subheader(f"백테스팅 – 상위 {n}개")
+                        st.subheader(f"백테스팅 – 상위 {n}개")
 
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("연평균", f"{stats.get('CAGR%', 0):.1f}%")
-                    c2.metric("누적", f"{stats.get('Total Return%', 0):.0f}%")
-                    c3.metric("최대낙폭", f"{stats.get('Max Drawdown%', 0):.1f}%")
-                    c4.metric("샤프", f"{stats.get('Sharpe Ratio', 0):.2f}")
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("연평균", f"{stats.get('CAGR%', 0):.1f}%")
+                        c2.metric("누적", f"{stats.get('Total Return%', 0):.0f}%")
+                        c3.metric("최대낙폭", f"{stats.get('Max Drawdown%', 0):.1f}%")
+                        c4.metric("샤프", f"{stats.get('Sharpe Ratio', 0):.2f}")
 
-                    fig = go.Figure()
-                    value = pf.value()
-                    fig.add_trace(go.Scatter(
-                        x=value.index,
-                        y=value / value.iloc[0] * 100,
-                        name="내 전략"
-                    ))
-
-                    spy = yf.download("SPY", start="2019-01-01", progress=False)
-                    if not spy.empty:
-                        spy_adj = spy["Adj Close"]
+                        fig = go.Figure()
+                        value = pf.value()
                         fig.add_trace(go.Scatter(
-                            x=spy_adj.index,
-                            y=spy_adj / spy_adj.iloc[0] * 100,
-                            name="S&P500",
-                            line=dict(dash="dash")
+                            x=value.index,
+                            y=value / value.iloc[0] * 100,
+                            name="내 전략"
                         ))
 
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("백테스팅 가격 데이터를 불러오지 못했습니다.")
+                        spy = yf.download("SPY", start="2019-01-01", progress=False)
+                        if spy is not None and not spy.empty and "Adj Close" in spy.columns:
+                            spy_adj = spy["Adj Close"]
+                            fig.add_trace(go.Scatter(
+                                x=spy_adj.index,
+                                y=spy_adj / spy_adj.iloc[0] * 100,
+                                name="S&P500",
+                                line=dict(dash="dash")
+                            ))
+
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("백테스팅 가격 데이터가 비어 있습니다.")
             else:
                 st.warning("유효한 결과가 없습니다. 티커/데이터 기간을 확인해주세요.")
 
-st.caption("Grok Ranker Ultimate v5.0 – 2025-12-09 05:40")
+st.caption("Grok Ranker Ultimate v5.1 – 2025-12-09 (유사 실시간 현재가 반영)")
